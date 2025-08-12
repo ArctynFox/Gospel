@@ -3,7 +3,8 @@ use clap::{Parser, Subcommand};
 use std::fmt::Display;
 use std::process;
 
-use crate::t_items2::{convert_json_to_t_items2, convert_t_items2_to_json_file};
+use crate::tables::t_book;
+use crate::tables::t_item2;
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -14,13 +15,18 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Decode t_bookXX._dt to json
+    TBookToJson {
+        /// Input file path for the t_bookXX._dt file
+        input_path: String,
+    },
     /// Decode t_items2._dt to json
-    TItems2ToJson {
+    TItem2ToJson {
         /// Input file path for the t_items2._dt file
         input_path: String,
     },
     /// Encode t_items2.json to _dt
-    TItems2FromJson {
+    JsonToTItem2 {
         /// Input file path for the json representation of a t_items2._dt file
         input_path: String,
     },
@@ -31,11 +37,14 @@ pub fn run() {
 
     if let Some(command) = cli.command {
         match command {
-            Commands::TItems2ToJson { input_path } => {
-                run_function(convert_t_items2_to_json_file, input_path);
+            Commands::TBookToJson { input_path } => {
+                run_function(t_book::convert_t_book_to_json_file, input_path);
             }
-            Commands::TItems2FromJson { input_path } => {
-                run_function(convert_json_to_t_items2, input_path);
+            Commands::TItem2ToJson { input_path } => {
+                run_function(t_item2::convert_t_items2_to_json_file, input_path);
+            }
+            Commands::JsonToTItem2 { input_path } => {
+                run_function(t_item2::convert_json_to_t_items2, input_path);
             }
         }
     } else {

@@ -73,7 +73,7 @@ fn parse_from_file(path: &str) -> io::Result<String> {
         .template("[{bar:40.cyan/blue}] {prefix} {pos}/{len}")
         .unwrap()
         .progress_chars("█🮆🮅🮄▀🮃🮂▔ ");
-    let bar = ProgressBar::new((address_first_datum as u64 - 2) / 2).with_style(style);
+    let bar = ProgressBar::new((address_first_datum as u64 - 2) / 4).with_style(style);
 
     let mut index_current_datum: u16 = 0;
 
@@ -85,7 +85,7 @@ fn parse_from_file(path: &str) -> io::Result<String> {
     //beginning of the file
     //book loop
     while index_current_datum != address_first_datum {
-        println!("Book ID: {}", book_id);
+        //println!("Book ID: {}", book_id);
         //seek to the pointer area for the current book
         file.seek(SeekFrom::Start(index_current_datum as u64))?;
         //read the address of the name of the current datum from the pointer list
@@ -114,7 +114,7 @@ fn parse_from_file(path: &str) -> io::Result<String> {
         let mut page_id: u8 = 0;
         //loop that fills a page
         while !book_content_done {
-            println!("Page ID: {}", page_id);
+            //println!("Page ID: {}", page_id);
 
             //create a page
             let mut page: Page = Page {
@@ -130,7 +130,7 @@ fn parse_from_file(path: &str) -> io::Result<String> {
             let mut line_id: u8 = 0;
             //loop that fills a line
             while !page_content_done {
-                println!("Line ID: {}", line_id);
+                //println!("Line ID: {}", line_id);
                 //single byte buffer to read page data byte by byte and separate it into lines
                 let mut byte = [0u8; 1];
 
@@ -150,12 +150,24 @@ fn parse_from_file(path: &str) -> io::Result<String> {
                 //match the current byte against the data rules
                 while !line_content_done {
                     //read a single byte into the byte buffer
-                    file.read_exact(&mut byte)?;
+                    match file.read_exact(&mut byte) {
+                        Ok(_) => {}
+                        Err(_) => {
+                            println!(
+                                "Early end of file. This was handled as the end of a book's contents."
+                            );
+                            page_content_done = true;
+                            book_content_done = true;
+                            let decoded_line_string = util::decode_string(&buffer)?;
+                            line.text = decoded_line_string;
+                            break;
+                        }
+                    }
 
                     match byte[0] {
                         //string end byte
                         0x00 => {
-                            println!("String end byte.");
+                            //println!("String end byte.");
                             //attempt to decode the string and if successful, set the line text to
                             //the string
                             let decoded_line_string = util::decode_string(&buffer);
@@ -175,7 +187,7 @@ fn parse_from_file(path: &str) -> io::Result<String> {
                         }
                         //new line byte
                         0x01 => {
-                            println!("Line end byte.");
+                            //println!("Line end byte.");
                             let decoded_line_string = util::decode_string(&buffer);
                             match decoded_line_string {
                                 Ok(decoded) => line.text = decoded,
@@ -191,7 +203,7 @@ fn parse_from_file(path: &str) -> io::Result<String> {
                         }
                         //wait for input byte, treat as new page
                         0x02 => {
-                            println!("Page end (wait for input) byte.");
+                            //println!("Page end (wait for input) byte.");
                             let decoded_line_string = util::decode_string(&buffer);
                             match decoded_line_string {
                                 Ok(decoded) => line.text = decoded,
@@ -211,7 +223,7 @@ fn parse_from_file(path: &str) -> io::Result<String> {
                         0x03 => {}
                         //color change
                         0x07 => {
-                            println!("Color change byte.");
+                            //println!("Color change byte.");
                             let mut next_byte = [0u8; 1];
                             file.read_exact(&mut next_byte)?;
                             //line.color = next_byte[0];
@@ -226,7 +238,7 @@ fn parse_from_file(path: &str) -> io::Result<String> {
                         }
                         //formatting change
                         0x23 => {
-                            println!("Formatting byte.");
+                            //println!("Formatting byte.");
                             //read the following bytes until x, y, F, or S
                             let mut next_byte = [0u8; 1];
                             file.read_exact(&mut next_byte)?;
@@ -245,7 +257,7 @@ fn parse_from_file(path: &str) -> io::Result<String> {
                                     match next_byte[0] {
                                         //F; face change
                                         0x46 => {
-                                            println!("Image change byte.");
+                                            //println!("Image change byte.");
                                             //image values are numbers stored as strings, so we need to decode to a string and then parse as a u16
                                             let image_id = util::decode_string(&image_value_bytes)?;
                                             let image_id_int = image_id.parse::<u16>();
@@ -265,6 +277,7 @@ fn parse_from_file(path: &str) -> io::Result<String> {
                                         }
                                         //S; size change
                                         0x53 => {
+                                            //println!("Size change byte.");
                                             for byte in util::encode_string("<S:") {
                                                 buffer.push(byte);
                                             }
@@ -279,7 +292,7 @@ fn parse_from_file(path: &str) -> io::Result<String> {
                                         }
                                         //x; x position change
                                         0x78 => {
-                                            println!("Image x byte.");
+                                            //println!("Image x byte.");
                                             let image_x = util::decode_string(&image_value_bytes)?;
                                             let image_x_int = image_x.parse::<u16>();
                                             match image_x_int {
@@ -298,7 +311,7 @@ fn parse_from_file(path: &str) -> io::Result<String> {
                                         }
                                         //y; y position change
                                         0x79 => {
-                                            println!("Image y byte.");
+                                            //println!("Image y byte.");
                                             let image_y = util::decode_string(&image_value_bytes)?;
                                             let image_y_int = image_y.parse::<u16>();
                                             match image_y_int {
@@ -322,6 +335,7 @@ fn parse_from_file(path: &str) -> io::Result<String> {
                                     }
                                 }
                             } else {
+                                //println!("Image clear.");
                                 page.image_id = None; //using this value to represent face reset
                             }
                         }
@@ -332,7 +346,7 @@ fn parse_from_file(path: &str) -> io::Result<String> {
                     }
                 } //NOTE: end byte read loop
 
-                println!("Line text: {}", line.text);
+                //println!("Line text: {}", line.text);
 
                 //push the line to the page
                 page.lines.push(line);

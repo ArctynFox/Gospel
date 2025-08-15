@@ -29,7 +29,7 @@ pub fn parse_string<R: Read>(reader: &mut R) -> io::Result<String> {
 
 pub fn decode_string(buffer: &Vec<u8>) -> io::Result<String> {
     //decode the string from CP932
-    let (decoded, _, error) = SHIFT_JIS.decode(&buffer);
+    let (decoded, _, error) = SHIFT_JIS.decode(buffer);
     if error {
         eprintln!("Error during decoding string. Bytes: {:?}", buffer);
     }

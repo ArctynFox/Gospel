@@ -25,6 +25,9 @@ pub enum Commands {
         /// Input file path for the t_items2._dt file
         input_path: String,
     },
+    JsonToTBook {
+        input_path: String,
+    },
     /// Encode t_items2.json to _dt
     JsonToTItem2 {
         /// Input file path for the json representation of a t_items2._dt file
@@ -42,6 +45,9 @@ pub fn run() {
             }
             Commands::TItem2ToJson { input_path } => {
                 run_function(t_item2::convert_t_items2_to_json_file, input_path);
+            }
+            Commands::JsonToTBook { input_path } => {
+                run_function(t_book::convert_json_to_t_book, input_path);
             }
             Commands::JsonToTItem2 { input_path } => {
                 run_function(t_item2::convert_json_to_t_items2, input_path);

@@ -1,0 +1,45 @@
+a book's data segment is 12 bytes long and starts sequentially from the first byte of the file
+file ends in 12 bytes of FF
+# data segment
+2 bytes refer to item id
+2 bytes null
+2 bytes to refer to the file number within the DT archive (For FC, t_book01 is 17 00, t_book02 is 18 00, so on... See json file created by Factoria)
+2 bytes to refer to the DT archive number (For FC, 02 00)
+2 bytes to denote the book id of this book within the file referred to above
+2 bytes null
+
+
+47 03 00 00 17 00 02 00 00 00 00 00
+48 03 00 00 17 00 02 00 01 00 00 00
+49 03 00 00 17 00 02 00 02 00 00 00
+4A 03 00 00 17 00 02 00 03 00 00 00
+4B 03 00 00 17 00 02 00 04 00 00 00
+4C 03 00 00 18 00 02 00 00 00 00 00
+4D 03 00 00 18 00 02 00 01 00 00 00
+4E 03 00 00 18 00 02 00 02 00 00 00
+4F 03 00 00 18 00 02 00 03 00 00 00
+50 03 00 00 18 00 02 00 04 00 00 00
+31 03 00 00 19 00 02 00 00 00 00 00
+3D 03 00 00 19 00 02 00 01 00 00 00
+3E 03 00 00 19 00 02 00 02 00 00 00
+3F 03 00 00 19 00 02 00 03 00 00 00
+40 03 00 00 19 00 02 00 04 00 00 00
+41 03 00 00 1A 00 02 00 00 00 00 00
+42 03 00 00 1A 00 02 00 01 00 00 00
+43 03 00 00 1A 00 02 00 02 00 00 00
+44 03 00 00 1A 00 02 00 03 00 00 00
+45 03 00 00 1A 00 02 00 04 00 00 00
+74 03 00 00 1A 00 02 00 05 00 00 00
+12 02 00 00 1B 00 02 00 00 00 00 00
+13 02 00 00 1B 00 02 00 01 00 00 00
+14 02 00 00 1B 00 02 00 02 00 00 00
+15 02 00 00 1B 00 02 00 03 00 00 00
+16 02 00 00 1B 00 02 00 04 00 00 00
+17 02 00 00 1B 00 02 00 05 00 00 00
+18 02 00 00 1C 00 02 00 00 00 00 00
+19 02 00 00 1C 00 02 00 01 00 00 00
+1A 02 00 00 1C 00 02 00 02 00 00 00
+1B 02 00 00 1C 00 02 00 03 00 00 00
+1C 02 00 00 1C 00 02 00 04 00 00 00
+76 03 00 00 1D 00 02 00 00 00 00 00
+FF FF FF FF FF FF FF FF FF FF FF FF 

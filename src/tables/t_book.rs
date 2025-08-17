@@ -29,9 +29,9 @@ struct Line {
     text: String,
 }
 
-pub fn convert_t_book_to_json_file(path: String) -> io::Result<()> {
-    let table_data = parse_from_file(&path)?;
-    let file_name = util::get_file_name(&path);
+pub fn convert_t_book_to_json_file(input_path: String) -> io::Result<()> {
+    let table_data = parse_from_file(&input_path)?;
+    let file_name = util::get_file_name(&input_path);
 
     if let Some(s) = file_name {
         let mut output = File::create(format!("{}.json", s))?;
@@ -45,9 +45,9 @@ pub fn convert_t_book_to_json_file(path: String) -> io::Result<()> {
     }
 }
 
-pub fn convert_json_to_t_book(path: String) -> io::Result<()> {
-    let json_data = fs::read_to_string(&path)?;
-    let file_name = util::get_file_name(&path);
+pub fn convert_json_to_t_book(input_path: String) -> io::Result<()> {
+    let json_data = fs::read_to_string(&input_path)?;
+    let file_name = util::get_file_name(&input_path);
     let books: Vec<Book> = serde_json::from_str(&json_data)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 

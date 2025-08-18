@@ -1,3 +1,5 @@
+Currently cannot decode JP files.
+
 2 byte pointer header space before data
 first 2 byte pointer header space points to first book's data segment
 second 2 bytes refer to the start of that book's content text

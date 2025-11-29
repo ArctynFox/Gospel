@@ -2,7 +2,8 @@ use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::fs::File;
-use std::io::{self, Read, Seek, SeekFrom, Write}; //CP932 compatible
+use std::io::{self, Read, Seek, SeekFrom, Write};
+//CP932 compatible
 use std::process;
 
 use crate::util;
@@ -66,6 +67,7 @@ pub fn convert_json_to_t_book(input_path: String) -> io::Result<()> {
 }
 
 //NOTE: code for converting from _dt to json-------------------------------------------------------
+
 //enum for the status of the current book
 enum ReadStatus {
     Continue,
@@ -73,146 +75,152 @@ enum ReadStatus {
     EndBook,
 }
 
-//read one text line from the file and return it with a ReadStatus enum to denote whether the page
-//or book has ended
 fn read_line(file: &mut File, page: &mut Page, line_id: u8) -> io::Result<(Line, ReadStatus)> {
     let mut line = Line {
         id: line_id,
         text: String::new(),
     };
-    let mut buffer = Vec::new();
+
+    //byte address of the start of the line
     let address_bytes: [u8; 2] = (file.stream_position()? as u16).to_le_bytes();
 
-    loop {
-        let mut byte = [0u8; 1];
-        //end of file midline is treated as EndBook (end of current book as well as end of last
-        //book in file)
-        if file.read_exact(&mut byte).is_err() {
-            //decode the byte vector into a string and add it to the line
-            line.text = util::decode_string(&buffer)?;
-            return Ok((line, ReadStatus::EndBook));
+    //get the string data of the line.
+    let (line_string_unformatted, read_status) = parse_line_bytes(file).unwrap();
+    println!("{}", line_string_unformatted);
+
+    let line_chars_unformatted: Vec<char> = line_string_unformatted.chars().collect();
+
+    let mut i = 0;
+    while i < line_chars_unformatted.len() {
+        let c: char = line_chars_unformatted[i];
+        match c {
+            '\u{0003}' => {}
+            '\u{07}' => {
+                line.text
+                    .extend(format!("<C:{}>", line_chars_unformatted[i + 1] as u8).chars());
+                i += 1;
+            }
+            '\u{0023}' => {
+                let length = handle_formatting(
+                    page,
+                    &mut line,
+                    &line_chars_unformatted,
+                    &address_bytes,
+                    i as u16 + 1,
+                )?;
+                i += length;
+            }
+            _ => line.text.push(c),
         }
 
-        //match the byte to known byte codes handled by the sky games or push it to the byte vector
-        match byte[0] {
-            //end of book
-            0x00 => {
-                line.text = decode_or_exit(&buffer, address_bytes);
-                return Ok((line, ReadStatus::EndBook));
-            }
-            //end of line
-            0x01 => {
-                line.text = decode_or_exit(&buffer, address_bytes);
-                return Ok((line, ReadStatus::Continue));
-            }
-            //end of page (actually wait for user input byte code but for all intents and purposes
-            //it signals the end of the page and I treat it as such for reproducable data storage)
-            0x02 => {
-                line.text = decode_or_exit(&buffer, address_bytes);
-                return Ok((line, ReadStatus::EndPage));
-            }
-            //actual end of page byte code but we don't use it
-            0x03 => {}
-            //color change
-            0x07 => {
-                let mut color_byte = [0u8; 1];
-                file.read_exact(&mut color_byte)?;
-                buffer.extend(util::encode_string(&format!("<C:{}>", color_byte[0])));
-            }
-            //formatting change (face position/id or text size change)
-            0x23 => {
-                handle_formatting(file, page, &mut buffer, address_bytes)?;
-            }
-            //anything else is just treated as line text
-            _ => buffer.push(byte[0]),
+        i += 1;
+    }
+
+    Ok((line, read_status))
+}
+
+//read the line of the file byte by byte to check for byte commands that the game uses
+fn parse_line_bytes(reader: &mut File) -> io::Result<(String, ReadStatus)> {
+    let mut buffer = Vec::new();
+    let mut byte = [0u8; 1];
+
+    //read bytes from starting position until an end of line, page, book, or file occurs
+    loop {
+        let n = reader.read(&mut byte)?;
+        //end of file
+        if n == 0 {
+            return Ok((util::decode_string(&buffer).unwrap(), ReadStatus::EndBook));
         }
+        //end of book
+        if byte[0] == 0x00 {
+            return Ok((util::decode_string(&buffer).unwrap(), ReadStatus::EndBook));
+        }
+        //end of line
+        if byte[0] == 0x01 {
+            return Ok((util::decode_string(&buffer).unwrap(), ReadStatus::Continue));
+        }
+        //end of page
+        if byte[0] == 0x02 {
+            return Ok((util::decode_string(&buffer).unwrap(), ReadStatus::EndPage));
+        }
+        buffer.push(byte[0]);
     }
 }
 
-//decode a byte vector into a string or print an error and exit
-fn decode_or_exit(bytes: &Vec<u8>, addr: [u8; 2]) -> String {
-    util::decode_string(bytes).unwrap_or_else(|e| {
-        eprintln!(
-            "Error reading string starting at {:02X} {:02X}; {}",
-            addr[0], addr[1], e
-        );
-        process::exit(1);
-    })
-}
-
-//match the formatting type and fill out the relevant page data or add it to the buffer
+//check the formatting information and handle it appropriately, then return the length of what was
+//read so that the segment can be skipped past in the calling function
 fn handle_formatting(
-    file: &mut File,
     page: &mut Page,
-    buffer: &mut Vec<u8>,
-    address_bytes: [u8; 2],
-) -> io::Result<()> {
-    let mut b = [0u8; 1];
-    file.read_exact(&mut b)?;
-
-    //F, clear face/image
-    if b[0] == 0x46 {
-        page.image_id = Some(0xFFF); //represent a face clear with 0xFFF, no change is None/null
-        return Ok(());
+    line: &mut Line,
+    line_chars_unformatted: &[char],
+    address_bytes: &[u8; 2],
+    start_index: u16,
+) -> io::Result<usize> {
+    println!(
+        "formatting char: {}",
+        line_chars_unformatted[start_index as usize]
+    );
+    if line_chars_unformatted[start_index as usize] == 'F' {
+        page.image_id = Some(0xFFF);
+        return Ok(1);
     }
 
-    let mut value_bytes = vec![b[0]];
-    loop {
-        file.read_exact(&mut b)?;
-        match b[0] {
-            //F, image id
-            0x46 => {
-                let id = parse_u16_string(&value_bytes, address_bytes)?;
-                page.image_id = Some(id);
-                break;
-            }
-            //S, text size
-            0x53 => {
-                buffer.extend(util::encode_string("<S:"));
-                buffer.extend(&value_bytes);
-                buffer.push(util::encode_string(">")[0]);
-                break;
-            }
-            //x position of face/image
-            0x78 => {
-                let x = parse_u16_string(&value_bytes, address_bytes)?;
-                page.image_x = Some(x);
-                break;
-            }
-            //y position of face/image
-            0x79 => {
-                let y = parse_u16_string(&value_bytes, address_bytes)?;
-                page.image_y = Some(y);
-                break;
-            }
-            //part of the value for the formatting data
-            _ => value_bytes.push(b[0]),
+    let (value, length) = util::parse_u16_from_chars(line_chars_unformatted, start_index).unwrap();
+
+    match line_chars_unformatted[start_index as usize + length] {
+        //F, image/face id
+        '\u{0046}' => {
+            page.image_id = Some(value);
+            Ok(length + 1)
         }
+        //S, text size
+        '\u{0053}' => {
+            line.text.extend(format!("<S:{}>", value).chars());
+            Ok(2)
+        }
+        //R, katakana, only used in JP
+        '\u{0052}' => {
+            util::parse_u16_from_chars(line_chars_unformatted, start_index).unwrap();
+            let (katakana, k_length) =
+                read_substring_until_hash(line_chars_unformatted, start_index + length as u16 + 1);
+            line.text
+                .extend(format!("<R:{};{}>", value, katakana).chars());
+            Ok(length + k_length + 1)
+        }
+        //x position of face/image
+        '\u{0078}' => {
+            page.image_x = Some(value);
+            Ok(length + 1)
+        }
+        //y position of face/image
+        '\u{0079}' => {
+            page.image_y = Some(value);
+            Ok(length + 1)
+        }
+        _ => panic!(
+            "Expected a known formatting type in string but received '#...{}' with line starting at {:02X} {:02X}",
+            line_chars_unformatted[start_index as usize + length + 1],
+            address_bytes[0],
+            address_bytes[1]
+        ),
     }
-    Ok(())
 }
 
-//parse a byte array as a string and convert to a u16 value (used for image x and y positions and
-//face ids)
-fn parse_u16_string(bytes: &[u8], address: [u8; 2]) -> io::Result<u16> {
-    let decoded = util::decode_string(&bytes.to_vec()).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "Failed to decode at {:02X} {:02X}: {}",
-                address[0], address[1], e
-            ),
-        )
-    })?;
-    decoded.parse::<u16>().map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "Failed to parse u16 at {:02X} {:02X}: {}",
-                address[0], address[1], e
-            ),
-        )
-    })
+//read a substring of the chars list until the '#' character
+//return tuple (substring, length)
+fn read_substring_until_hash(chars: &[char], start_index: u16) -> (String, usize) {
+    let mut katakana_string: String = String::new();
+    let mut length: usize = 0;
+    for i in start_index as usize..chars.len() {
+        if chars[i] == '#' {
+            length += 1;
+            return (katakana_string, length);
+        } else {
+            katakana_string.push(chars[i]);
+            length += 1;
+        }
+    }
+    return (katakana_string, length);
 }
 
 //read all of the lines for one page out and add them to a page, return the page and a bool
@@ -398,6 +406,22 @@ fn books_to_byte_data(books: Vec<Book>) -> Vec<u8> {
                         bytes.push(remainder.as_bytes()[3]);
                         bytes.push(0x53);
                         i += 5; // same as before
+                    } else if remainder.starts_with("<R:") {
+                        //katakana
+                        bytes.push(0x23);
+                        let (value, v_length) = util::parse_u16_from_chars(
+                            &remainder.chars().collect::<Vec<char>>(),
+                            3,
+                        )
+                        .unwrap();
+                        bytes.extend(util::encode_string(&value.to_string()));
+                        bytes.push(0x52);
+                        let katakana_then_remainder = remainder.split(';').collect::<Vec<_>>()[1];
+                        let katakana = katakana_then_remainder.split('>').collect::<Vec<_>>()[0];
+                        let katakana_encoded = util::encode_string(katakana);
+                        bytes.extend(katakana_encoded);
+                        bytes.push(0x23);
+                        i += katakana.len() + v_length + 5;
                     } else {
                         // push normal character as CP932-encoded byte
                         let mut iter = remainder.chars();

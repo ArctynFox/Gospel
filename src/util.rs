@@ -1,9 +1,31 @@
 use encoding_rs::SHIFT_JIS;
 use std::io::{self, Read};
+use std::num::ParseIntError;
 use std::path::Path; //CP932 compatible
 
-//parse a string from the current position in a given buffer, assuming the end of the string is
-//denoted with b'\0'
+//parse an arbitrary length u16 from a char array given the starting index,
+//return the tuple of (value, length)
+pub fn parse_u16_from_chars(
+    char_array: &[char],
+    start_index: u16,
+) -> Result<(u16, usize), ParseIntError> {
+    let mut end_index = start_index;
+
+    //find the end of the number
+    while end_index < char_array.len() as u16 && char_array[end_index as usize].is_ascii_digit() {
+        end_index += 1;
+    }
+
+    //concatenate the chars of the number subset into a string
+    let values: String = char_array[start_index as usize..end_index as usize]
+        .iter()
+        .collect();
+
+    //parse the string as a u16
+    Ok((values.parse::<u16>()?, values.len()))
+}
+
+//parse a string from the current position in a given buffer, ending at the given byte
 pub fn parse_string_until_byte<R: Read>(reader: &mut R, end_byte: u8) -> io::Result<String> {
     let mut buffer = Vec::new();
     let mut byte = [0u8; 1];
@@ -59,4 +81,35 @@ pub fn get_file_name(filepath: &str) -> Option<&str> {
         .file_name()
         .and_then(|f| f.to_str())
         .map(|filename| filename.split('.').next().unwrap_or(filename))
+}
+
+//NOTE: tests
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn try_parse_u16() {
+        let test_string: Vec<char> = "af-fs#241Fawx".chars().collect();
+        let start_index = 6;
+        let value = parse_u16_from_chars(&test_string, start_index).unwrap();
+        assert_eq!(value, (241, 3));
+    }
+
+    #[test]
+    fn try_parse_u16_jp() {
+        let test_string: Vec<char> = "何とか#241Fうんたらかんたら".chars().collect();
+        let start_index = 4;
+        let value = parse_u16_from_chars(&test_string, start_index).unwrap();
+        assert_eq!(value, (241, 3));
+    }
+
+    #[test]
+    fn cp932_round_trip() {
+        let test_string = "なんといっても日本語だぜ/No matter what you say, it's English";
+        let test_encoded = encode_string(test_string);
+        let test_decoded = decode_string(&test_encoded).unwrap();
+        assert_eq!(test_string, test_decoded);
+    }
 }

@@ -1,3 +1,5 @@
+Implemented.
+
 a book's data segment is 12 bytes long and starts sequentially from the first byte of the file
 file ends in 12 bytes of FF
 # data segment

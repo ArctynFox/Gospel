@@ -86,7 +86,6 @@ fn read_line(file: &mut File, page: &mut Page, line_id: u8) -> io::Result<(Line,
 
     //get the string data of the line.
     let (line_string_unformatted, read_status) = parse_line_bytes(file).unwrap();
-    println!("{}", line_string_unformatted);
 
     let line_chars_unformatted: Vec<char> = line_string_unformatted.chars().collect();
 
@@ -156,10 +155,6 @@ fn handle_formatting(
     address_bytes: &[u8; 2],
     start_index: u16,
 ) -> io::Result<usize> {
-    println!(
-        "formatting char: {}",
-        line_chars_unformatted[start_index as usize]
-    );
     if line_chars_unformatted[start_index as usize] == 'F' {
         page.image_id = Some(0xFFF);
         return Ok(1);
@@ -346,103 +341,7 @@ fn books_to_byte_data(books: Vec<Book>) -> Vec<u8> {
         let content_address = bytes.len() as u16;
 
         //encode each page line by line
-        for (page_idx, page) in book.pages.iter().enumerate() {
-            //encode image info at start of page if present
-            //image x data
-            if let Some(x) = page.image_x {
-                bytes.push(0x23);
-                for b in x.to_string().as_bytes() {
-                    bytes.push(*b);
-                }
-                bytes.push(0x78); // x position
-            }
-            //image y data
-            if let Some(y) = page.image_y {
-                bytes.push(0x23);
-                for b in y.to_string().as_bytes() {
-                    bytes.push(*b);
-                }
-                bytes.push(0x79); // y position
-            }
-            //image face data
-            if let Some(image_id) = page.image_id {
-                bytes.push(0x23); // formatting change
-                if image_id != 0xFFF {
-                    for b in image_id.to_string().as_bytes() {
-                        bytes.push(*b);
-                    }
-                }
-                bytes.push(0x46); // 'F' for face/image
-            }
-            for (line_idx, line) in page.lines.iter().enumerate() {
-                let mut i = 0;
-                while i < line.text.len() {
-                    let remainder = &line.text[i..];
-                    if let Some(rest) = remainder.strip_prefix("<C:") {
-                        // push color change byte
-                        bytes.push(0x07);
-
-                        // find number after <C:
-                        let num_str: String =
-                            rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-
-                        let number = num_str.parse::<u8>().unwrap_or_else(|e| {
-                            println!("Failed to parse string to u8: From {}; {}", line.text, e);
-                            process::exit(1);
-                        });
-
-                        bytes.push(number);
-
-                        // advance i past the whole <C:n> tag
-                        i += remainder
-                            .chars()
-                            .take_while(|c| *c != '>')
-                            .map(|c| c.len_utf8())
-                            .sum::<usize>()
-                            + 1; // +1 for '>'
-                    } else if remainder.starts_with("<S:") {
-                        // existing size change handling
-                        bytes.push(0x23);
-                        bytes.push(remainder.as_bytes()[3]);
-                        bytes.push(0x53);
-                        i += 5; // same as before
-                    } else if remainder.starts_with("<R:") {
-                        //katakana
-                        bytes.push(0x23);
-                        let (value, v_length) = util::parse_u16_from_chars(
-                            &remainder.chars().collect::<Vec<char>>(),
-                            3,
-                        )
-                        .unwrap();
-                        bytes.extend(util::encode_string(&value.to_string()));
-                        bytes.push(0x52);
-                        let katakana_then_remainder = remainder.split(';').collect::<Vec<_>>()[1];
-                        let katakana = katakana_then_remainder.split('>').collect::<Vec<_>>()[0];
-                        let katakana_encoded = util::encode_string(katakana);
-                        bytes.extend(katakana_encoded);
-                        bytes.push(0x23);
-                        i += katakana.len() + v_length + 5;
-                    } else {
-                        // push normal character as CP932-encoded byte
-                        let mut iter = remainder.chars();
-                        if let Some(c) = iter.next() {
-                            let b = util::encode_string(&c.to_string());
-                            bytes.extend(b);
-                            i += c.len_utf8();
-                        }
-                    }
-                }
-                // end of line if not last line of page
-                if line_idx + 1 != page.lines.len() {
-                    bytes.push(0x01);
-                }
-            }
-            //end of page if not last page of book
-            if page_idx + 1 != book.pages.len() {
-                bytes.push(0x02);
-                bytes.push(0x03);
-            }
-        }
+        write_pages(&mut bytes, &book);
         //end of book
         bytes.push(0x00);
 
@@ -461,4 +360,115 @@ fn books_to_byte_data(books: Vec<Book>) -> Vec<u8> {
     }
 
     bytes
+}
+
+//write all of the data from the book to the byte vector
+fn write_pages(bytes: &mut Vec<u8>, book: &Book) {
+    for (page_idx, page) in book.pages.iter().enumerate() {
+        //encode image info at start of page if present
+        //image x data
+        if let Some(x) = page.image_x {
+            bytes.push(0x23);
+            for b in x.to_string().as_bytes() {
+                bytes.push(*b);
+            }
+            bytes.push(0x78); // x position
+        }
+        //image y data
+        if let Some(y) = page.image_y {
+            bytes.push(0x23);
+            for b in y.to_string().as_bytes() {
+                bytes.push(*b);
+            }
+            bytes.push(0x79); // y position
+        }
+        //image face data
+        if let Some(image_id) = page.image_id {
+            bytes.push(0x23); // formatting change
+            if image_id != 0xFFF {
+                for b in image_id.to_string().as_bytes() {
+                    bytes.push(*b);
+                }
+            }
+            bytes.push(0x46); // 'F' for face/image
+        }
+
+        //write all of the lines of the page to the byte vector, handling formatting
+        //appropriately
+        write_lines(bytes, &page);
+
+        //end of page if not last page of book
+        if page_idx + 1 != book.pages.len() {
+            bytes.push(0x02);
+            bytes.push(0x03);
+        }
+    }
+}
+
+//write the given line's text to the given byte vector, then mark the end of the line if it's not
+//the last line of the page
+fn write_lines(bytes: &mut Vec<u8>, page: &Page) {
+    for (line_idx, line) in page.lines.iter().enumerate() {
+        let mut i = 0;
+        while i < line.text.len() {
+            let remainder = &line.text[i..];
+            if let Some(rest) = remainder.strip_prefix("<C:") {
+                //color change ('<C:number>')
+                // push color change byte
+                bytes.push(0x07);
+
+                // find number after <C:
+                let num_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+
+                let number = num_str.parse::<u8>().unwrap_or_else(|e| {
+                    println!("Failed to parse string to u8: From {}; {}", line.text, e);
+                    process::exit(1);
+                });
+
+                bytes.push(number);
+
+                // advance i past the whole <C:n> tag
+                i += remainder
+                    .chars()
+                    .take_while(|c| *c != '>')
+                    .map(|c| c.len_utf8())
+                    .sum::<usize>()
+                    + 1; // +1 for '>'
+            } else if remainder.starts_with("<S:") {
+                //size change ('<S:number>')
+                // existing size change handling
+                bytes.push(0x23); //#
+                bytes.push(remainder.as_bytes()[3]);
+                bytes.push(0x53); //S
+                i += 5; // same as before
+            } else if remainder.starts_with("<R:") {
+                //katakana ('<R:number;text>')
+                bytes.push(0x23); //#
+                let (value, v_length) =
+                    util::parse_u16_from_chars(&remainder.chars().collect::<Vec<char>>(), 3)
+                        .unwrap();
+                bytes.extend(util::encode_string(&value.to_string()));
+                bytes.push(0x52); //R
+                let katakana_then_remainder = remainder.split(';').collect::<Vec<_>>()[1];
+                let katakana = katakana_then_remainder.split('>').collect::<Vec<_>>()[0];
+                let katakana_encoded = util::encode_string(katakana);
+                bytes.extend(katakana_encoded);
+                bytes.push(0x23); //#
+                i += katakana.len() + v_length + 5;
+            } else {
+                //normal text
+                // push normal character as CP932-encoded byte
+                let mut iter = remainder.chars();
+                if let Some(c) = iter.next() {
+                    let b = util::encode_string(&c.to_string());
+                    bytes.extend(b);
+                    i += c.len_utf8();
+                }
+            }
+        }
+        // end of line if not last line of page
+        if line_idx + 1 != page.lines.len() {
+            bytes.push(0x01);
+        }
+    }
 }

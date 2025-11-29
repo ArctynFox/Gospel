@@ -1,3 +1,5 @@
+Not yet implemented.
+
 Directs to the file for a face sprite.
 
 # data segment
